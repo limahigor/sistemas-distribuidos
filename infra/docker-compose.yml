@@ -1,0 +1,130 @@
+services:
+  db:
+    image: postgres:16
+    container_name: emr-db
+    environment:
+      POSTGRES_DB: emrdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --lc-collate=C --lc-ctype=C"
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d emrdb"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+ 
+  gateway:
+    build:
+      context: ../src/gateway
+      dockerfile: ../../infra/gateway/Dockerfile
+    container_name: emr-gateway
+    environment:
+      AUTH_BASE: http://auth:7001/
+      PATIENTS_BASE: http://patients:7002/
+      RECORDS_BASE: http://records:7003/
+      SCHEDULING_BASE: http://scheduling:7004/
+
+      JWT_ALG: HS256
+      JWT_SECRET: CHANGE_ME
+      JWT_AUD: emr-gateway
+      JWT_ISS: auth-service
+
+      UPSTREAM_TIMEOUT: "5.0"
+      RETRY_COUNT: "1"
+      RATE_LIMIT_RPM: "120"
+      CORS_ALLOW_ORIGIN: "*"
+    depends_on:
+      auth:
+        condition: service_started
+    ports:
+      - "8080:8080"
+    networks:
+      - internal
+
+  auth:
+    build:
+      context: ../src/auth-service/
+      dockerfile: ../../infra/auth/Dockerfile 
+    container_name: emr-auth
+    environment:
+      DATABASE_URL: postgresql+psycopg2://postgres:postgres@db:5432/emrdb
+      JWT_SECRET: CHANGE_ME
+      JWT_ALG: HS256
+      JWT_AUD: emr-gateway
+      JWT_ISS: auth-service
+      ACCESS_TTL_MIN: "30"
+      SEED_USER: "1"
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "7001:7001"
+    networks:
+      - internal
+  
+  patients:
+    build:
+      context: ../src/patients-service
+      dockerfile: ../../infra/patients/Dockerfile
+    container_name: emr-patients
+    environment:
+      DATABASE_URL: postgresql+psycopg2://postgres:postgres@db:5432/emrdb
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "7002:7002"
+    networks:
+      - internal
+
+  records:
+    build:
+      context: ../src/records-service
+      dockerfile: ../../infra/records/Dockerfile
+    container_name: emr-records
+    environment:
+      DATABASE_URL: postgresql+psycopg2://postgres:postgres@db:5432/emrdb
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "7003:7003"
+    networks:
+      - internal
+
+  scheduling:
+    build:
+      context: ../src/scheduling-service
+      dockerfile: ../../infra/scheduling/Dockerfile
+    container_name: emr-scheduling
+    environment:
+      DATABASE_URL: postgresql+psycopg2://postgres:postgres@db:5432/emrdb
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "7004:7004"
+    networks:
+      - internal
+  
+  spa:
+    image: nginx:alpine
+    container_name: spa
+    ports:
+      - "5500:80"
+    volumes:
+      - ../src/front/:/usr/share/nginx/html:ro
+    restart: unless-stopped
+volumes:
+  pgdata:
+
+networks:
+  internal:
+    driver: bridge

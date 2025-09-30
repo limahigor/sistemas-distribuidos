@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Painel de Controle EMR</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #888; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #555; }
+        .transition-all { transition: all 0.3s ease-in-out; }
+        .modal-backdrop {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 50;
+        }
+        .modal-content {
+            background-color: white;
+            padding: 2rem;
+            border-radius: 0.5rem;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans">
+
+    <!-- Tela de Login -->
+    <div id="login-screen" class="min-h-screen flex items-center justify-center">
+        <div class="bg-white p-8 rounded-lg shadow-lg w-full max-w-sm">
+            <h2 class="text-2xl font-bold mb-6 text-center text-gray-800">EMR Gateway - Login</h2>
+            <form id="login-form">
+                <div class="mb-4">
+                    <label for="username" class="block text-gray-700 text-sm font-bold mb-2">Usuário</label>
+                    <input type="text" id="username" value="admin" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" required>
+                </div>
+                <div class="mb-6">
+                    <label for="password" class="block text-gray-700 text-sm font-bold mb-2">Senha</label>
+                    <input type="password" id="password" value="admin" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 mb-3 leading-tight focus:outline-none focus:shadow-outline" required>
+                </div>
+                <div id="login-error" class="text-red-500 text-xs italic mb-4 hidden"></div>
+                <button type="submit" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded w-full focus:outline-none focus:shadow-outline transition-all">
+                    Entrar
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Painel Principal -->
+    <div id="app-dashboard" class="hidden">
+        <header class="bg-white shadow-md p-4 flex justify-between items-center">
+            <h1 class="text-2xl font-bold text-gray-800">Painel de Controle EMR</h1>
+            <div>
+                <span id="user-info" class="text-gray-600 mr-4"></span>
+                <button id="logout-button" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded transition-all">
+                    <i class="fas fa-sign-out-alt mr-2"></i>Sair
+                </button>
+            </div>
+        </header>
+
+        <main class="flex h-[calc(100vh-68px)]">
+            <!-- Coluna de Pacientes -->
+            <aside class="w-1/3 bg-white border-r border-gray-200 p-4 overflow-y-auto">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-semibold">Pacientes</h2>
+                    <button id="add-patient-btn" class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-3 rounded-full text-sm transition-all">
+                        <i class="fas fa-plus"></i>
+                    </button>
+                </div>
+                <input type="text" id="patient-search" placeholder="Buscar paciente..." class="w-full p-2 border rounded mb-4">
+                <ul id="patient-list" class="space-y-2">
+                    <!-- Lista de pacientes será inserida aqui -->
+                </ul>
+            </aside>
+
+            <!-- Coluna de Detalhes do Paciente -->
+            <section id="patient-details-section" class="w-2/3 p-6 overflow-y-auto">
+                 <div id="details-placeholder" class="flex flex-col items-center justify-center h-full text-gray-500">
+                    <i class="fas fa-user-md fa-4x mb-4"></i>
+                    <p class="text-xl">Selecione um paciente para ver os detalhes</p>
+                </div>
+                <div id="details-content" class="hidden">
+                    <!-- Detalhes do paciente serão inseridos aqui -->
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Modal Genérico -->
+    <div id="modal" class="modal-backdrop hidden">
+        <div class="modal-content">
+            <h3 id="modal-title" class="text-xl font-bold mb-4"></h3>
+            <form id="modal-form">
+                <div id="modal-body" class="mb-6">
+                    <!-- Campos do formulário serão inseridos aqui -->
+                </div>
+                <div id="modal-error" class="text-red-500 text-xs italic mb-4 hidden"></div>
+                <div class="flex justify-end space-x-4">
+                    <button type="button" id="modal-cancel-btn" class="bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded transition-all">Cancelar</button>
+                    <button type="submit" id="modal-save-btn" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded transition-all">Salvar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+
+    
+<script>
+
+const USER_DIRECTORY = {
+};
+
+function displayNameFromUser(user) {
+  if (!user) return null;
+  return user.name || user.fullName || user.displayName || user.username || null;
+}
+
+function displayNameFromClaims(claims) {
+  if (!claims) return null;
+  if (claims.name) return claims.name;
+  if (claims.given_name && claims.family_name) return `${claims.given_name} ${claims.family_name}`;
+  if (claims.preferred_username) return claims.preferred_username;
+
+  if (typeof claims.sub === 'object' && claims.sub) {
+    return displayNameFromUser(claims.sub) || claims.sub.id || null;
+  }
+
+  if (typeof claims.sub === 'string') {
+    return USER_DIRECTORY[claims.sub] || claims.sub;
+  }
+  
+  return null;
+}
+
+function resolveDoctorName(app) {
+  return (
+    app.doctorName ||     
+    app.doctor_full_name ||
+    (app.doctor && displayNameFromUser(app.doctor)) ||
+    USER_DIRECTORY[app.doctorId]  ||
+    USER_DIRECTORY[app.doctor_id] ||
+    app.doctorId || app.doctor_id || '—'
+  );
+}
+
+
+document.addEventListener('DOMContentLoaded', () => {
+  const API_BASE_URL = 'http://localhost:8080';
+  let state = {
+    patients: [],
+    selectedPatientId: null,
+    token: localStorage.getItem('accessToken'),
+    currentUser: null
+  };
+
+  const loginScreen = document.getElementById('login-screen');
+  const dashboard = document.getElementById('app-dashboard');
+  const loginForm = document.getElementById('login-form');
+  const loginError = document.getElementById('login-error');
+  const logoutButton = document.getElementById('logout-button');
+  const patientList = document.getElementById('patient-list');
+  const patientSearch = document.getElementById('patient-search');
+  const detailsPlaceholder = document.getElementById('details-placeholder');
+  const detailsContent = document.getElementById('details-content');
+  const addPatientBtn = document.getElementById('add-patient-btn');
+  const userInfo = document.getElementById('user-info');
+  
+  const modal = document.getElementById('modal');
+  const modalTitle = document.getElementById('modal-title');
+  const modalBody = document.getElementById('modal-body');
+  const modalForm = document.getElementById('modal-form');
+  const modalError = document.getElementById('modal-error');
+  const modalCancelBtn = document.getElementById('modal-cancel-btn');
+
+  function parseJwt(token) {
+    try {
+      const [, payload] = token.split('.');
+      const b64 = (payload || '').replace(/-/g, '+').replace(/_/g, '/');
+      const padded = b64 + '='.repeat((4 - b64.length % 4) % 4);
+      const json = decodeURIComponent(atob(padded).split('').map(c => '%'+('00'+c.charCodeAt(0).toString(16)).slice(-2)).join(''));
+      return JSON.parse(json);
+    } catch {
+      return null;
+    }
+  }
+  const nowSec = () => Math.floor(Date.now()/1000);
+  const isExpired = (claims) => !claims || (typeof claims.exp === 'number' && claims.exp <= nowSec());
+
+  function setToken(t) {
+  state.token = t;
+  localStorage.setItem('accessToken', t);
+  state.currentUser = parseJwt(t);
+
+  const niceName =
+    displayNameFromClaims(state.currentUser) ||
+    'Usuário';
+
+  userInfo.textContent = `Usuário: ${niceName}`;
+}
+  function clearToken() {
+    state.token = null;
+    state.currentUser = null;
+    localStorage.removeItem('accessToken');
+  }
+
+  async function tryRefresh() {
+    if (!state.token) return false;
+    const r = await fetch(`${API_BASE_URL}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${state.token}` }
+    });
+    if (!r.ok) return false;
+    const data = await r.json().catch(() => ({}));
+    if (data && data.access_token) {
+      setToken(data.access_token);
+      return true;
+    }
+    return false;
+  }
+
+  async function apiFetch(endpoint, options = {}, { retryOn401 = true } = {}) {
+    const headers = {
+      'Content-Type': 'application/json',
+      ...(options.headers || {})
+    };
+    if (state.token) headers['Authorization'] = `Bearer ${state.token}`;
+
+    const doFetch = () => fetch(`${API_BASE_URL}${endpoint}`, { ...options, headers });
+
+    let res = await doFetch();
+
+    if (res.status === 401 && retryOn401) {
+      const refreshed = await tryRefresh();
+      if (refreshed) {
+        headers['Authorization'] = `Bearer ${state.token}`;
+        res = await doFetch();
+      } else {
+        handleLogout();
+        throw new Error('Sessão expirada. Faça login novamente.');
+      }
+    }
+
+    if (res.status === 204) return null;
+    const isJson = res.headers.get('content-type')?.includes('application/json');
+    const data = isJson ? await res.json().catch(() => null) : null;
+
+    if (!res.ok) {
+      const msg = data?.detail || data?.error || res.statusText || 'Erro na requisição.';
+      throw new Error(msg);
+    }
+    return data;
+  }
+
+  function handleLogin(e) {
+    e.preventDefault();
+    const username = loginForm.username.value.trim();
+    const password = loginForm.password.value.trim();
+    loginError.classList.add('hidden');
+
+    fetch(`${API_BASE_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    })
+    .then(res => {
+      if (!res.ok) throw new Error('Credenciais inválidas');
+      return res.json();
+    })
+    .then(data => {
+      setToken(data.access_token);
+      initializeApp();
+    })
+    .catch(err => {
+      loginError.textContent = err.message;
+      loginError.classList.remove('hidden');
+    });
+  }
+
+  function handleLogout() {
+    clearToken();
+    loginScreen.style.display = 'flex';
+    dashboard.style.display = 'none';
+    patientList.innerHTML = '';
+    showDetailsPlaceholder();
+  }
+
+  async function initializeApp() {
+    if (!state.token) {
+      loginScreen.style.display = 'flex';
+      dashboard.style.display = 'none';
+      return;
+    }
+
+    const claims = parseJwt(state.token);
+    if (!claims) return handleLogout();
+
+    if (isExpired(claims)) {
+      const ok = await tryRefresh();
+      if (!ok) return handleLogout();
+    }
+
+    setToken(state.token);
+
+    loginScreen.style.display = 'none';
+    dashboard.style.display = 'block';
+
+    await fetchPatients();
+  }
+
+  async function fetchPatients() {
+    try {
+      const patients = await apiFetch('/patients');
+      state.patients = Array.isArray(patients) ? patients : [];
+      renderPatientList();
+    } catch (error) {
+      alert(`Erro ao buscar pacientes: ${error.message}`);
+    }
+  }
+
+  async function fetchPatientSummary(patientId) {
+    state.selectedPatientId = patientId;
+    renderPatientList();
+    try {
+      const summary = await apiFetch(`/patient/${patientId}/summary`);
+      renderPatientDetails(summary);
+    } catch (error) {
+      alert(`Erro ao buscar detalhes do paciente: ${error.message}`);
+    }
+  }
+
+  function renderPatientList() {
+    const term = patientSearch.value.toLowerCase();
+    const filtered = state.patients.filter(p => (p.name || '').toLowerCase().includes(term));
+
+    patientList.innerHTML = filtered.map(p => `
+      <li class="p-3 rounded-lg cursor-pointer transition-all ${state.selectedPatientId === p.id ? 'bg-blue-500 text-white' : 'hover:bg-gray-200'}"
+          data-patient-id="${p.id}">
+        <p class="font-semibold">${p.name}</p>
+        <p class="text-sm ${state.selectedPatientId === p.id ? 'text-blue-100' : 'text-gray-600'}">${p.phone || 'Sem telefone'}</p>
+      </li>
+    `).join('');
+  }
+
+  function renderPatientDetails(summary) {
+    detailsPlaceholder.classList.add('hidden');
+    detailsContent.classList.remove('hidden');
+
+    const patient = summary?.patient || {};
+    const recentRecords = summary?.recentRecords || [];
+    const upcomingAppointments = summary?.upcomingAppointments || [];
+
+    const canWritePatients = state.currentUser?.scopes?.includes('patients:write');
+    const canWriteRecords = state.currentUser?.scopes?.includes('records:write');
+    const canWriteScheduling = state.currentUser?.scopes?.includes('scheduling:write');
+
+    detailsContent.innerHTML = `
+      <!-- Paciente -->
+      <div class="bg-white p-6 rounded-lg shadow mb-6">
+        <div class="flex justify-between items-start">
+          <div>
+            <h2 class="text-2xl font-bold text-gray-800">${patient.name || 'Nome não encontrado'}</h2>
+            <p class="text-gray-600">Nascimento: ${patient.dob ? new Date(patient.dob).toLocaleDateString('pt-BR') : 'N/A'}</p>
+            <p class="text-gray-600">Telefone: ${patient.phone || 'N/A'}</p>
+            <p class="text-sm text-gray-400 mt-1">ID: ${patient.id || '-'}</p>
+          </div>
+          ${canWritePatients ? `
+          <div class="flex space-x-2">
+            <button class="edit-patient-btn text-blue-500 hover:text-blue-700" data-patient-id="${patient.id}"><i class="fas fa-edit"></i></button>
+            <button class="delete-patient-btn text-red-500 hover:text-red-700" data-patient-id="${patient.id}"><i class="fas fa-trash"></i></button>
+          </div>` : ''}
+        </div>
+      </div>
+
+      <!-- Agendamentos -->
+      <div class="bg-white p-6 rounded-lg shadow mb-6">
+        <div class="flex justify-between items-center mb-4">
+          <h3 class="text-xl font-semibold">Próximos Agendamentos</h3>
+          ${canWriteScheduling ? `<button class="add-appointment-btn bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded-full text-sm transition-all" data-patient-id="${patient.id}"><i class="fas fa-plus"></i></button>` : ''}
+        </div>
+        <ul class="space-y-3">
+          ${upcomingAppointments.length ? upcomingAppointments.map(app => `
+            <li class="flex justify-between items-center p-3 bg-gray-50 rounded-md">
+              <div>
+                <p class="font-semibold">${new Date(app.when).toLocaleString('pt-BR')}</p>
+                <p class="text-sm text-gray-600">Dr(a): lala ${resolveDoctorName(app)} - Status: <span class="font-medium">${app.status}</span></p>
+              </div>
+              ${canWriteScheduling ? `<button class="delete-appointment-btn text-red-500 hover:text-red-700 text-xs" data-appointment-id="${app.id}"><i class="fas fa-times-circle"></i></button>` : ''}
+            </li>
+          `).join('') : '<li class="text-gray-500">Nenhum agendamento futuro.</li>'}
+        </ul>
+      </div>
+
+      <!-- Prontuários -->
+      <div class="bg-white p-6 rounded-lg shadow">
+        <div class="flex justify-between items-center mb-4">
+          <h3 class="text-xl font-semibold">Prontuários Recentes</h3>
+          ${canWriteRecords ? `<button class="add-record-btn bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded-full text-sm transition-all" data-patient-id="${patient.id}"><i class="fas fa-plus"></i></button>` : ''}
+        </div>
+        <ul class="space-y-3">
+          ${recentRecords.length ? recentRecords.map(rec => `
+            <li class="p-3 bg-gray-50 rounded-md">
+              <div class="flex justify-between items-center mb-1">
+                <p class="font-semibold text-blue-800">${rec.type}</p>
+                <p class="text-sm text-gray-500">${new Date(rec.ts).toLocaleString('pt-BR')}</p>
+              </div>
+              <p class="text-gray-700 whitespace-pre-wrap">${rec.note || ''}</p>
+            </li>
+          `).join('') : '<li class="text-gray-500">Nenhum prontuário encontrado.</li>'}
+        </ul>
+      </div>
+    `;
+  }
+
+  function showDetailsPlaceholder() {
+    detailsPlaceholder.classList.remove('hidden');
+    detailsContent.classList.add('hidden');
+    detailsContent.innerHTML = '';
+  }
+
+  function openModal(config) {
+    modalTitle.textContent = config.title;
+    modalBody.innerHTML = config.body;
+    modal.style.display = 'flex';
+
+    modalForm.onsubmit = (e) => {
+      e.preventDefault();
+      const formData = new FormData(e.target);
+      const data = Object.fromEntries(formData.entries());
+      modalError.classList.add('hidden');
+      Promise.resolve(config.onSave(data))
+        .catch(err => {
+          modalError.textContent = err.message || 'Erro ao salvar';
+          modalError.classList.remove('hidden');
+        });
+    };
+  }
+  function closeModal() {
+    modal.style.display = 'none';
+    modalForm.onsubmit = null;
+    modalError.classList.add('hidden');
+  }
+
+  function showAddPatientModal() {
+    openModal({
+      title: 'Novo Paciente',
+      body: `
+        <div class="mb-4">
+          <label class="block text-gray-700 text-sm font-bold mb-2">Nome Completo</label>
+          <input type="text" name="name" class="shadow appearance-none border rounded w-full py-2 px-3" required>
+        </div>
+        <div class="mb-4">
+          <label class="block text-gray-700 text-sm font-bold mb-2">Data de Nascimento</label>
+          <input type="date" name="dob" class="shadow appearance-none border rounded w-full py-2 px-3">
+        </div>
+        <div>
+          <label class="block text-gray-700 text-sm font-bold mb-2">Telefone</label>
+          <input type="tel" name="phone" class="shadow appearance-none border rounded w-full py-2 px-3">
+        </div>
+      `,
+      async onSave(data) {
+        await apiFetch('/patients', { method: 'POST', body: JSON.stringify(data) });
+        closeModal();
+        await fetchPatients();
+      }
+    });
+  }
+
+  function showEditPatientModal(patient) {
+    openModal({
+      title: 'Editar Paciente',
+      body: `
+        <div class="mb-4">
+          <label class="block text-gray-700 text-sm font-bold mb-2">Nome Completo</label>
+          <input type="text" name="name" value="${patient.name || ''}" class="shadow appearance-none border rounded w-full py-2 px-3" required>
+        </div>
+        <div class="mb-4">
+          <label class="block text-gray-700 text-sm font-bold mb-2">Data de Nascimento</label>
+          <input type="date" name="dob" value="${patient.dob || ''}" class="shadow appearance-none border rounded w-full py-2 px-3">
+        </div>
+        <div>
+          <label class="block text-gray-700 text-sm font-bold mb-2">Telefone</label>
+          <input type="tel" name="phone" value="${patient.phone || ''}" class="shadow appearance-none border rounded w-full py-2 px-3">
+        </div>
+      `,
+      async onSave(data) {
+        await apiFetch(`/patients/${patient.id}`, { method: 'PUT', body: JSON.stringify(data) });
+        closeModal();
+        await fetchPatients();
+        await fetchPatientSummary(patient.id);
+      }
+    });
+  }
+
+  function showAddRecordModal(patientId) {
+    openModal({
+      title: 'Novo Prontuário',
+      body: `
+        <input type="hidden" name="patientId" value="${patientId}">
+        <div class="mb-4">
+          <label class="block text-gray-700 text-sm font-bold mb-2">Tipo</label>
+          <input type="text" name="type" placeholder="Ex: consulta, exame" class="shadow appearance-none border rounded w-full py-2 px-3" required>
+        </div>
+        <div>
+          <label class="block text-gray-700 text-sm font-bold mb-2">Anotação</label>
+          <textarea name="note" rows="5" class="shadow appearance-none border rounded w-full py-2 px-3"></textarea>
+        </div>
+      `,
+      async onSave(data) {
+        await apiFetch('/records', { method: 'POST', body: JSON.stringify(data) });
+        closeModal();
+        await fetchPatientSummary(patientId);
+      }
+    });
+  }
+
+  function showAddAppointmentModal(patientId) {
+    openModal({
+      title: 'Novo Agendamento',
+      body: `
+        <input type="hidden" name="patientId" value="${patientId}">
+        <div class="mb-4">
+          <label class="block text-gray-700 text-sm font-bold mb-2">Médico(a)</label>
+          <input type="text" name="doctorId" placeholder="ID ou nome do médico" class="shadow appearance-none border rounded w-full py-2 px-3" required>
+        </div>
+        <div>
+          <label class="block text-gray-700 text-sm font-bold mb-2">Data e Hora</label>
+          <input type="datetime-local" name="whenLocal" class="shadow appearance-none border rounded w-full py-2 px-3" required>
+        </div>
+      `,
+      async onSave(data) {
+        const whenIso = data.whenLocal ? new Date(data.whenLocal).toISOString() : null;
+        const payload = { patientId: data.patientId, doctorId: data.doctorId, when: whenIso };
+        const idempotencyKey = crypto.randomUUID();
+        await apiFetch('/appointments', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+          headers: { 'Idempotency-Key': idempotencyKey }
+        });
+        closeModal();
+        await fetchPatientSummary(patientId);
+      }
+    });
+  }
+
+  loginForm.addEventListener('submit', handleLogin);
+  logoutButton.addEventListener('click', handleLogout);
+  patientSearch.addEventListener('input', renderPatientList);
+  addPatientBtn.addEventListener('click', showAddPatientModal);
+  modalCancelBtn.addEventListener('click', closeModal);
+
+  patientList.addEventListener('click', (e) => {
+    const li = e.target.closest('li[data-patient-id]');
+    if (li) fetchPatientSummary(li.dataset.patientId);
+  });
+
+  detailsContent.addEventListener('click', async (e) => {
+    const editBtn = e.target.closest('.edit-patient-btn');
+    if (editBtn) {
+      const patient = state.patients.find(p => p.id === editBtn.dataset.patientId);
+      if (patient) showEditPatientModal(patient);
+    }
+ 
+    const deleteBtn = e.target.closest('.delete-patient-btn');
+    if (deleteBtn) {
+      const patientId = deleteBtn.dataset.patientId;
+      if (confirm('Tem certeza que deseja excluir este paciente e todos os seus dados?')) {
+        try {
+          await apiFetch(`/patients/${patientId}`, { method: 'DELETE' });
+          state.selectedPatientId = null;
+          showDetailsPlaceholder();
+          await fetchPatients();
+        } catch (error) {
+          alert(`Erro ao deletar paciente: ${error.message}`);
+        }
+      }
+    }
+   
+    const addRecordBtn = e.target.closest('.add-record-btn');
+    if (addRecordBtn) showAddRecordModal(addRecordBtn.dataset.patientId);
+   
+    const addAppointmentBtn = e.target.closest('.add-appointment-btn');
+    if (addAppointmentBtn) showAddAppointmentModal(addAppointmentBtn.dataset.patientId);
+   
+    const deleteAppointmentBtn = e.target.closest('.delete-appointment-btn');
+    if (deleteAppointmentBtn) {
+      const appointmentId = deleteAppointmentBtn.dataset.appointmentId;
+      if (confirm('Tem certeza que deseja cancelar este agendamento?')) {
+        try {
+          await apiFetch(`/appointments/${appointmentId}`, { method: 'DELETE' });
+          await fetchPatientSummary(state.selectedPatientId);
+        } catch (error) {
+          alert(`Erro ao cancelar agendamento: ${error.message}`);
+        }
+      }
+    }
+  });
+
+  initializeApp();
+});
+</script>
+</body>
+</html>
+
