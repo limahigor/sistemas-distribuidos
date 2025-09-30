@@ -1,4 +1,4 @@
-# Sistema de Gerenciamento de prontuários baseado em microserviços
+# Gerenciamento de prontuários baseado em microserviços
 
 Este projeto é um sistema de exemplo baseado em uma arquitetura de microserviços, desenvolvido com o objetivo de aprender e praticar conceitos de sistemas distribuídos.
 
